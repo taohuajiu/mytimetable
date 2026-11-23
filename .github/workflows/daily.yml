@@ -1,0 +1,37 @@
+name: daily-timetable
+
+on:
+  schedule:
+    # UTC 时间，北京时间 -8。这里表示每天北京时间 07:05 跑
+    - cron: "5 23 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          WPS_COOKIE: ${{ secrets.WPS_COOKIE }}
+        run: |
+          python 课表提取.py --refresh --json-out timetable.json
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add timetable.json
+          git commit -m "update timetable" || exit 0
+          git push
