@@ -5,7 +5,8 @@ on:
     # UTC 时间，北京时间 -8。这里表示每天北京时间 07:05 跑
     - cron: "5 23 * * *"
   workflow_dispatch: {}
-
+env:
+  TZ: Asia/Shanghai
 jobs:
   run:
     runs-on: ubuntu-latest
