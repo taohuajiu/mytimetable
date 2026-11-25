@@ -1,14 +1,14 @@
 {
   "name": "段锋杰",
-  "updated": "2026-11-24 14:54",
+  "updated": "2026-11-25 08:10",
   "month_total": 11470,
   "month": {
     "year": 2026,
     "month": 11,
     "total_hours": 57,
     "total_money": 11470,
-    "done_hours": 41,
-    "done_money": 8170,
+    "done_hours": 43,
+    "done_money": 8590,
     "band": {
       "count": 10,
       "money": 1800,
@@ -27,14 +27,6 @@
   },
   "courses": [
     {
-      "date": "2026-11-24",
-      "weekday": "星期二",
-      "time": "13:30-15:30",
-      "course": "陈柯澔14点",
-      "kind": "一对一",
-      "price": 210
-    },
-    {
       "date": "2026-11-25",
       "weekday": "星期三",
       "time": "8:00-10:00",
@@ -46,7 +38,7 @@
       "date": "2026-11-25",
       "weekday": "星期三",
       "time": "13:30-15:30",
-      "course": "陈柯澔14点",
+      "course": "陈柯澔14点30分",
       "kind": "一对一",
       "price": 210
     },
@@ -159,6 +151,14 @@
       "weekday": "星期日",
       "time": "15:30-17:30",
       "course": "赵誉超",
+      "kind": "一对一",
+      "price": 210
+    },
+    {
+      "date": "2026-12-01",
+      "weekday": "星期二",
+      "time": "8:00-10:00",
+      "course": "陈柯澔九点",
       "kind": "一对一",
       "price": 210
     }
