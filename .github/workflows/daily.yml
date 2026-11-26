@@ -25,9 +25,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # 公开版脚本不含单价：学生课单价从 Secret 注入，代码和日志里都不出现
       - name: Run script
         env:
           WPS_COOKIE: ${{ secrets.WPS_COOKIE }}
+          STUDENT_PRICES: ${{ secrets.STUDENT_PRICES }}
         run: |
           python 课表提取.py --refresh --json-out timetable.json
 
