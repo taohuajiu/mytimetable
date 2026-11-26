@@ -1,28 +1,31 @@
 {
   "name": "段锋杰",
-  "updated": "2026-11-26 17:51",
-  "month_total": 11260,
+  "updated": "2026-11-26 21:37",
+  "month_total": 11531.9,
   "month": {
     "year": 2026,
     "month": 11,
     "total_hours": 56,
-    "total_money": 11260,
+    "total_money": 11531.9,
     "done_hours": 45,
-    "done_money": 9010,
+    "done_money": 9193.78,
+    "base_salary": 1600.0,
+    "total_income": 13131.9,
+    "done_income": 10793.78,
     "band": {
       "count": 10,
-      "money": 1800,
-      "rate": 180
+      "money": 1800.0,
+      "rate": 180.0
     },
     "one": {
       "count": 42,
-      "money": 8820,
-      "rate": 210
+      "money": 9091.9,
+      "rate": 216.47
     },
     "trial": {
       "count": 4,
-      "money": 640,
-      "rate": 160
+      "money": 640.0,
+      "rate": 160.0
     }
   },
   "courses": [
@@ -31,128 +34,112 @@
       "weekday": "星期四",
       "time": "8:00-10:00",
       "course": "陈柯澔九点",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-26",
       "weekday": "星期四",
       "time": "13:30-15:30",
       "course": "黄锴",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-27",
       "weekday": "星期五",
       "time": "13:30-15:30",
       "course": "黄锴",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-27",
       "weekday": "星期五",
       "time": "19:30-21:30",
       "course": "徐瑾涵",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
       "time": "8:00-10:00",
       "course": "黄楷",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
       "time": "10:10-12:10",
       "course": "高二数学班-A1",
-      "kind": "班课",
-      "price": 180
+      "kind": "班课"
     },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
       "time": "13:30-15:30",
       "course": "唐莎",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
       "time": "15:30-17:30",
       "course": "高一数学班-B1",
-      "kind": "班课",
-      "price": 180
+      "kind": "班课"
     },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
       "time": "17:30-19:30",
       "course": "秦语嫣18点",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-29",
       "weekday": "星期日",
       "time": "8:00-10:00",
       "course": "黄楷",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-29",
       "weekday": "星期日",
       "time": "10:10-12:10",
       "course": "陈柯澔",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-29",
       "weekday": "星期日",
       "time": "13:30-15:30",
       "course": "吴子墨",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-11-29",
       "weekday": "星期日",
       "time": "15:30-17:30",
       "course": "赵誉超",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-12-01",
       "weekday": "星期二",
       "time": "8:00-10:00",
       "course": "陈柯澔九点",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-12-02",
       "weekday": "星期三",
       "time": "8:00-10:00",
       "course": "黄锴九点",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     },
     {
       "date": "2026-12-02",
       "weekday": "星期三",
       "time": "13:30-15:30",
       "course": "陈柯澔14点",
-      "kind": "一对一",
-      "price": 210
+      "kind": "一对一"
     }
   ]
 }
