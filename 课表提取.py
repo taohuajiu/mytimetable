@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-金山文档课表提取器
-==================
-从金山文档（WPS 云文档）读取课表，筛出指定老师的行，按原表格式导出未来 N 天的课表 Excel，
-并额外输出一份 JSON 供手机端 Scriptable 读取（未来 N 天 + 本月课酬）。
+金山文档课表提取器（公开版 · 不含单价）
+========================================
+用法与完整版完全一样，区别只有两点：
+
+1. 一对一学生单价不写在代码里。优先读环境变量 STUDENT_PRICES（GitHub Actions 用 Secret 注入），
+   其次读脚本同目录的 prices.json，都没有就按兜底价算并给出警告。
+   格式： {"学生A": 500, "学生B": 620}（键是学生名，值是课单价）
+2. 输出的 timetable.json 只给"节数 + 金额合计"：
+   每节课不带 price、不带 student，也不输出按学生的 breakdown，避免把学生单价公开。
 
 默认行为
 --------
@@ -43,6 +48,7 @@ import sys
 import urllib.error
 import urllib.request
 from copy import copy
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 try:
@@ -66,15 +72,62 @@ GROUP_HINTS = ("班", "年级", "高复", "艺考")
 GRADE_PATTERN = re.compile(r"高[一二三]|初[一二三]|小学|大班|小班")
 SPLIT_PATTERN = re.compile(r"[、,，/;；\n]+")
 
-RATE_BAND = 180
-RATE_ONE = 210
-RATE_TRIAL = 160
-RATES = {"班课": RATE_BAND, "一对一": RATE_ONE, "体验课": RATE_TRIAL}
+# ---------- 课时费规则（按学生精确计算）----------
+COMMISSION = 0.35          # 一对一：老师到手 = 学生课单价 × 0.35
+BASE_SALARY = 1600.0       # 底薪（每月固定，计入"当前到手/本月到手"）
+
+RATE_BAND = 180.0          # 班课：到手固定 180 元/节
+RATE_TRIAL = 160.0         # 体验课：到手固定 160 元/节
+
+# 一对一学生的课单价（按报名/标价，到手需乘 COMMISSION）——本文件不保存，运行时注入
+# 来源优先级：环境变量 STUDENT_PRICES > 脚本同目录 prices.json > 空（用兜底价）
+STUDENT_PRICE = {}
+
+# 课表里的其他写法 → 统一到上面的人名（同一人同价）
+NAME_ALIAS = {
+    "黄锴": "黄楷",
+}
+
+# 不按提成、直接带固定到手价的学生（唐莎：到手 180 元/节）
+FIXED_STUDENT_RATE = {
+    "唐莎": 180.0,
+}
+
+DEFAULT_ONE_RATE = 210.0   # 名单外的学生：沿用原来的一对一 210 元/节兜底
+
+
+def load_student_prices():
+    """从环境变量或 prices.json 读一对一单价；读不到就返回空表。"""
+    raw = os.environ.get("STUDENT_PRICES", "").strip()
+    if raw:
+        try:
+            return {str(k): float(v) for k, v in json.loads(raw).items()}
+        except Exception as e:
+            sys.exit("STUDENT_PRICES 解析失败（应为 {{\"姓名\": 单价}}）：{}".format(e))
+
+    p = Path(__file__).resolve().parent / "prices.json"
+    if p.exists():
+        try:
+            return {str(k): float(v) for k, v in
+                    json.loads(p.read_text(encoding="utf-8")).items()}
+        except Exception as e:
+            sys.exit("prices.json 解析失败：{}".format(e))
+
+    print("！没有找到一对一单价（STUDENT_PRICES 或 prices.json），"
+          "名单内学生会按 {} 元/节兜底，金额偏低。".format(DEFAULT_ONE_RATE))
+    return {}
+
+
+STUDENT_PRICE = load_student_prices()
+UNKNOWN_LABEL = "未登记学生"
+
 KINDS = ("班课", "一对一", "体验课")
 TRIAL_PATTERN = re.compile(r"(?:[Tt]|体验课?)$")
 # ===================================================================
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+# GitHub Actions 的日志对公开仓库任何人可见，跑在云端时只输出总数
+QUIET = os.environ.get("GITHUB_ACTIONS") == "true"
 SOURCE_DIR = SCRIPT_DIR / "课表源文件"
 
 
@@ -412,6 +465,100 @@ def classify_course(text):
     return "一对一"
 
 
+def strip_trial(text):
+    """去掉体验课标记（末尾的 T / 体验课），只留学生名+备注。"""
+    s = clean_text(text)
+    s = re.sub(r"(?:体验课|体验)$", "", s)
+    s = re.sub(r"[Tt]$", "", s)
+    return s
+
+
+def student_of(text):
+    """从课程文字里认出学生姓名，认不出返回 None。"""
+    s = strip_trial(text)
+    if not s:
+        return None
+    keys = list(STUDENT_PRICE) + list(FIXED_STUDENT_RATE) + list(NAME_ALIAS)
+    for name in sorted(keys, key=len, reverse=True):
+        if name in s:
+            return NAME_ALIAS.get(name, name)
+    return None
+
+
+def one_rate(name):
+    """一对一老师到手单价。"""
+    if name in FIXED_STUDENT_RATE:
+        return FIXED_STUDENT_RATE[name]
+    if name in STUDENT_PRICE:
+        return STUDENT_PRICE[name] * COMMISSION
+    return DEFAULT_ONE_RATE
+
+
+def item_money(kind, part):
+    """单节课老师到手金额。"""
+    if kind == "班课":
+        return RATE_BAND
+    if kind == "体验课":
+        return RATE_TRIAL
+    return one_rate(student_of(part))
+
+
+def category_rates():
+    """所有可能的收费条目 → 到手单价。"""
+    rates = {"班课": RATE_BAND, "体验课": RATE_TRIAL, UNKNOWN_LABEL: DEFAULT_ONE_RATE}
+    for n, p in STUDENT_PRICE.items():
+        rates[n] = p * COMMISSION
+    rates.update(FIXED_STUDENT_RATE)
+    return rates
+
+
+def category_of(kind, part):
+    """把一节课归到"班课/体验课/某学生"这一栏。"""
+    if kind == "班课":
+        return "班课"
+    if kind == "体验课":
+        return "体验课"
+    return student_of(part) or UNKNOWN_LABEL
+
+
+def summarize_by_category(detail, day_limit):
+    """按"班课 / 体验课 / 每个学生"汇总全月与已上的节数和金额。"""
+    rates = category_rates()
+    rows = {}
+    for d in sorted(detail):
+        done = d <= day_limit
+        b = detail[d]
+        for kind in KINDS:
+            for _, _, part in b[kind]:
+                key = category_of(kind, part)
+                r = rows.setdefault(key, {
+                    "label": key, "rate": rates.get(key),
+                    "all_n": 0, "all_m": 0.0, "done_n": 0, "done_m": 0.0,
+                })
+                m = item_money(kind, part)
+                r["all_n"] += 1
+                r["all_m"] += m
+                if done:
+                    r["done_n"] += 1
+                    r["done_m"] += m
+
+    ordered = [rows.pop(k) for k in ("班课", "体验课") if k in rows]
+    ordered += sorted(rows.values(), key=lambda x: (-x["all_m"], x["label"]))
+    return ordered
+
+
+def round2(v):
+    """四舍五入到分（229.075 → 229.08），避免浮点把 .5 舍掉。"""
+    if v is None:
+        return None
+    return float(Decimal(str(round(v, 6))).quantize(Decimal("0.01"),
+                                                    rounding=ROUND_HALF_UP))
+
+
+def fmt_money(v):
+    return "{:,.2f}".format(round2(v))
+
+
 def collect_month(src_wb, name, year, month, today):
     detail = {}
     sheet_titles = []
@@ -481,7 +628,7 @@ def day_courses(bucket):
 
 
 def bucket_money(bucket):
-    return sum(RATES[k] * len(bucket[k]) for k in KINDS)
+    return sum(item_money(k, part) for k in KINDS for _, _, part in bucket[k])
 
 
 def disp_width(text):
@@ -500,40 +647,61 @@ def split_month(detail, today):
     return all_sum, done_sum
 
 
-def sum_money(summary):
-    return sum(RATES[k] * summary[k] for k in KINDS)
-
-
 def print_stats(name, year, month, detail, summary, today=None):
     today = today or dt.date.max
+    rows = summarize_by_category(detail, today)
     all_sum, done_sum = split_month(detail, today)
-    money_all, money_done = sum_money(all_sum), sum_money(done_sum)
     total_all, total_done = sum(all_sum.values()), sum(done_sum.values())
+    money_all = sum(r["all_m"] for r in rows)
+    money_done = sum(r["done_m"] for r in rows)
+
+    if QUIET:
+        print("\n{} · {}年{}月：全月 {} 节，课酬 {} 元；已上 {} 节，课酬 {} 元；"
+              "加底薪 {} 元后到手 {:.2f} / {:.2f} 元（明细不在命令行输出）".format(
+                  name, year, month, total_all, fmt_money(money_all),
+                  total_done, fmt_money(money_done), fmt_money(BASE_SALARY),
+                  money_done + BASE_SALARY, money_all + BASE_SALARY))
+        return
+
     weekdays = sum(1 for d in detail if d.weekday() < 5)
     pending = sum(1 for d in detail if d > today)
 
-    widths = (10, 10, 12, 10, 12)
+    widths = (14, 12, 10, 14, 10, 14)
     print("\n{} · {}年{}月课时与课酬".format(name, year, month))
-    print("-" * 62)
+    print("-" * 78)
     print("  " + "".join(pad(h, w) for h, w in zip(
-        ("类型", "全月节数", "全月课酬", "已上节数", "已上课酬"), widths)))
-    for k in KINDS:
-        print("  " + pad(k, widths[0])
-              + str(all_sum[k]).rjust(widths[1])
-              + str(RATES[k] * all_sum[k]).rjust(widths[2])
-              + str(done_sum[k]).rjust(widths[3])
-              + str(RATES[k] * done_sum[k]).rjust(widths[4]))
-    print("  " + pad("合计", widths[0])
-          + str(total_all).rjust(widths[1])
-          + str(money_all).rjust(widths[2])
-          + str(total_done).rjust(widths[3])
-          + str(money_done).rjust(widths[4]))
+        ("类型/学生", "到手单价", "全月节数", "全月课酬", "已上节数", "已上课酬"), widths)))
+    for r in rows:
+        print("  " + pad(r["label"], widths[0])
+              + fmt_money(r["rate"]).rjust(widths[1])
+              + str(r["all_n"]).rjust(widths[2])
+              + fmt_money(r["all_m"]).rjust(widths[3])
+              + str(r["done_n"]).rjust(widths[4])
+              + fmt_money(r["done_m"]).rjust(widths[5]))
+    print("  " + "-" * 76)
+    print("  " + pad("课酬合计", widths[0])
+          + "".rjust(widths[1])
+          + str(total_all).rjust(widths[2])
+          + fmt_money(money_all).rjust(widths[3])
+          + str(total_done).rjust(widths[4])
+          + fmt_money(money_done).rjust(widths[5]))
+    print("  " + pad("底薪", widths[0])
+          + "".rjust(widths[1]) + "".rjust(widths[2])
+          + fmt_money(BASE_SALARY).rjust(widths[3])
+          + "".rjust(widths[4])
+          + fmt_money(BASE_SALARY).rjust(widths[5]))
+    print("  " + pad("到手总计", widths[0])
+          + "".rjust(widths[1])
+          + str(total_all).rjust(widths[2])
+          + fmt_money(money_all + BASE_SALARY).rjust(widths[3])
+          + str(total_done).rjust(widths[4])
+          + fmt_money(money_done + BASE_SALARY).rjust(widths[5]))
     print("  （有课 {} 天，工作日 {} 天、周末 {} 天；今天 {}，还有 {} 天待上）"
           .format(len(detail), weekdays, len(detail) - weekdays,
                   today if today != dt.date.max else "-", pending))
-    print("-" * 62)
+    print("-" * 78)
 
-    running = 0
+    running = 0.0
     for d in sorted(detail):
         b = detail[d]
         cells = ["{} {}".format(h, s) for h, s in day_courses(b)]
@@ -541,12 +709,13 @@ def print_stats(name, year, month, detail, summary, today=None):
         m = bucket_money(b)
         if d <= today:
             running += m
-            tail = "累计{:>6}".format(running)
+            tail = "累计{:>10}".format(fmt_money(running))
         else:
-            tail = "  未上  "
-        print("  {:>2}/{:02d} {}  {}节 {:>5}元 {}  {}".format(
-            d.month, d.day, WEEKDAY_CN[d.weekday()], n, m, tail, "；".join(cells)))
-    print("-" * 62)
+            tail = "    未上    "
+        print("  {:>2}/{:02d} {}  {}节 {:>9}元 {}  {}".format(
+            d.month, d.day, WEEKDAY_CN[d.weekday()], n, fmt_money(m), tail,
+            "；".join(cells)))
+    print("-" * 78)
 
 
 def write_month_sheet(wb, name, year, month, detail, summary, today=None, sheet_title=None):
@@ -561,8 +730,10 @@ def write_month_sheet(wb, name, year, month, detail, summary, today=None, sheet_
     center = Alignment(horizontal="center", vertical="center")
     grey = Font(name="微软雅黑", size=11, color="FFA6A6A6", italic=True)
 
+    rows = summarize_by_category(detail, day_limit)
     all_sum, done_sum = split_month(detail, day_limit)
-    money_all, money_done = sum_money(all_sum), sum_money(done_sum)
+    money_all = sum(r["all_m"] for r in rows)
+    money_done = sum(r["done_m"] for r in rows)
     total_all, total_done = sum(all_sum.values()), sum(done_sum.values())
     pending = sum(1 for d in detail if d > day_limit)
 
@@ -574,17 +745,21 @@ def write_month_sheet(wb, name, year, month, detail, summary, today=None, sheet_
     ws.row_dimensions[1].height = 26
 
     if today:
-        head = ("截至 {}月{}日（含今天）已上 {} 节，课酬 {} 元；"
-                "本月已排 {} 节，共 {} 元，还有 {} 天课未上。").format(
-            today.month, today.day, total_done, "{:,}".format(money_done),
-            total_all, "{:,}".format(money_all), pending)
+        head = ("截至 {}月{}日（含今天）已上 {} 节，课酬 {} 元；加底薪 {} 元，"
+                "到手合计 {} 元。本月已排 {} 节，课酬 {} 元，到手合计 {} 元，"
+                "还有 {} 天课未上。").format(
+            today.month, today.day, total_done, fmt_money(money_done),
+            fmt_money(BASE_SALARY), fmt_money(money_done + BASE_SALARY),
+            total_all, fmt_money(money_all), fmt_money(money_all + BASE_SALARY), pending)
     else:
-        head = "本月已排 {} 节，课酬 {} 元。".format(total_all, "{:,}".format(money_all))
+        head = "本月已排 {} 节，课酬 {} 元，到手合计 {} 元。".format(
+            total_all, fmt_money(money_all), fmt_money(money_all + BASE_SALARY))
     c = ws.cell(row=2, column=1, value=head)
     c.font = Font(name="微软雅黑", size=11, bold=True, color="FFC00000")
     ws.merge_cells("A2:I2")
 
-    headers = ("类型", "单价(元/节)", "全月节数", "全月小计(元)", "已上节数", "已上小计(元)")
+    headers = ("类型/学生", "到手单价(元/节)", "全月节数", "全月小计(元)",
+               "已上节数", "已上小计(元)")
     for i, h in enumerate(headers, 1):
         cell = ws.cell(row=4, column=i, value=h)
         cell.font = Font(name="微软雅黑", size=11, bold=True)
@@ -593,28 +768,41 @@ def write_month_sheet(wb, name, year, month, detail, summary, today=None, sheet_
         cell.border = border
 
     r = 5
-    for k in KINDS:
-        vals = (k, RATES[k], all_sum[k], RATES[k] * all_sum[k],
-                done_sum[k], RATES[k] * done_sum[k])
+    for item in rows:
+        vals = (item["label"],
+                None if item["rate"] is None else round2(item["rate"]),
+                item["all_n"], round2(item["all_m"]),
+                item["done_n"], round2(item["done_m"]))
         for i, v in enumerate(vals, 1):
             cell = ws.cell(row=r, column=i, value=v)
             cell.font = Font(name="微软雅黑", size=11)
             cell.alignment = center
             cell.border = border
-        ws.cell(row=r, column=4).number_format = "#,##0"
-        ws.cell(row=r, column=6).number_format = "#,##0"
+        ws.cell(row=r, column=2).number_format = "#,##0.00"
+        ws.cell(row=r, column=4).number_format = "#,##0.00"
+        ws.cell(row=r, column=6).number_format = "#,##0.00"
         r += 1
 
-    for i, v in enumerate(("合计", None, total_all, money_all, total_done, money_done), 1):
-        cell = ws.cell(row=r, column=i, value=v)
-        cell.font = Font(name="微软雅黑", size=11, bold=True)
-        cell.fill = sum_fill
-        cell.alignment = center
-        cell.border = border
-    ws.cell(row=r, column=4).number_format = "#,##0"
-    ws.cell(row=r, column=6).number_format = "#,##0"
-    ws.cell(row=r, column=6).font = Font(name="微软雅黑", size=12, bold=True, color="FFC00000")
-    total_row = r
+    def put_sum_row(label, n1, m1, n2, m2, bold_money=False):
+        nonlocal r
+        for i, v in enumerate((label, None, n1, m1, n2, m2), 1):
+            cell = ws.cell(row=r, column=i, value=v)
+            cell.font = Font(name="微软雅黑", size=11, bold=True)
+            cell.fill = sum_fill
+            cell.alignment = center
+            cell.border = border
+        ws.cell(row=r, column=4).number_format = "#,##0.00"
+        ws.cell(row=r, column=6).number_format = "#,##0.00"
+        if bold_money:
+            ws.cell(row=r, column=6).font = Font(
+                name="微软雅黑", size=12, bold=True, color="FFC00000")
+        r += 1
+
+    put_sum_row("课酬合计", total_all, round2(money_all), total_done, round2(money_done))
+    put_sum_row("底薪", None, round2(BASE_SALARY), None, round2(BASE_SALARY))
+    put_sum_row("到手总计", total_all, round2(money_all + BASE_SALARY),
+                total_done, round2(money_done + BASE_SALARY), bold_money=True)
+    total_row = r - 1
 
     r = total_row + 2
     c = ws.cell(row=r, column=1, value="逐日明细（累计列只算到今天，灰字为未上的课）")
@@ -654,29 +842,35 @@ def write_month_sheet(wb, name, year, month, detail, summary, today=None, sheet_
                 cell.fill = today_fill
             elif d > day_limit:
                 cell.font = grey
-        ws.cell(row=r, column=7).number_format = "#,##0"
-        ws.cell(row=r, column=8).number_format = "#,##0"
+        ws.cell(row=r, column=7).number_format = "#,##0.00"
+        ws.cell(row=r, column=8).number_format = "#,##0.00"
         lines = max(1, -(-disp_width(row_vals[-1]) // 44))
         if lines > 1:
             ws.row_dimensions[r].height = 16 * lines
         r += 1
 
     for i, v in enumerate(("合计", None, all_sum["班课"], all_sum["一对一"],
-                           all_sum["体验课"], total_all, money_all, money_done, None), 1):
+                           all_sum["体验课"], total_all, round2(money_all),
+                           round2(money_done), None), 1):
         cell = ws.cell(row=r, column=i, value=v)
         cell.font = Font(name="微软雅黑", size=11, bold=True)
         cell.fill = sum_fill
         cell.border = border
         cell.alignment = center
-    ws.cell(row=r, column=7).number_format = "#,##0"
-    ws.cell(row=r, column=8).number_format = "#,##0"
-    cell = ws.cell(row=r, column=9, value="课酬合计＝全月；累计列＝截至今天")
+    ws.cell(row=r, column=7).number_format = "#,##0.00"
+    ws.cell(row=r, column=8).number_format = "#,##0.00"
+    cell = ws.cell(row=r, column=9, value="课酬合计＝全月；累计列＝截至今天（不含底薪）")
     cell.font = Font(name="微软雅黑", size=9, color="FF808080")
     cell.alignment = Alignment(horizontal="left", vertical="center")
 
     r += 2
-    note = ("说明：体验课 = 学生名后带 T（如 夏子淇T），{} 元/节；"
-            "其余一对一 {} 元/节；班课 {} 元/节。").format(RATE_TRIAL, RATE_ONE, RATE_BAND)
+    price_txt = "、".join("{} {}".format(n, fmt_money(p * COMMISSION))
+                         for n, p in STUDENT_PRICE.items())
+    note = ("说明：班课 {:.0f} 元/节；体验课（名字带 T）{:.0f} 元/节；"
+            "一对一按「学生课单价 × 提成 {:.0%}」算到手（{}），唐莎固定 {:.0f} 元/节；"
+            "底薪 {:.0f} 元/月。金额按精确值累加，显示保留两位小数。").format(
+        RATE_BAND, RATE_TRIAL, COMMISSION, price_txt,
+        FIXED_STUDENT_RATE.get("唐莎", RATE_BAND), BASE_SALARY)
     cell = ws.cell(row=r, column=1, value=note)
     cell.font = Font(name="微软雅黑", size=9, color="FF808080")
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=9)
@@ -692,20 +886,41 @@ def output_json(name, today, month_detail, month_summary, range_detail,
                 month_year, month_month, json_path):
     """输出 timetable.json 供手机端 Scriptable 读取。"""
     all_sum, done_sum = split_month(month_detail, today)
+    rows = summarize_by_category(month_detail, today)
+    money_all = sum(r["all_m"] for r in rows)
+    money_done = sum(r["done_m"] for r in rows)
+
+    # 兼容手机端旧脚本：band/one/trial 仍然给 count/money/rate 三个键
+    def kind_money(labels):
+        return sum(r["all_m"] for r in rows if r["label"] in labels)
+
+    band_labels = {"班课"}
+    trial_labels = {"体验课"}
+    one_labels = {r["label"] for r in rows} - band_labels - trial_labels
+    one_money = kind_money(one_labels)
+    one_count = all_sum["一对一"]
+
     data = {
         "name": name,
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "month_total": sum_money(all_sum),
+        "month_total": round2(money_all),
         "month": {
             "year": month_year,
             "month": month_month,
             "total_hours": sum(all_sum.values()),
-            "total_money": sum_money(all_sum),
+            "total_money": round2(money_all),
             "done_hours": sum(done_sum.values()),
-            "done_money": sum_money(done_sum),
-            "band": {"count": all_sum["班课"], "money": RATES["班课"] * all_sum["班课"], "rate": RATES["班课"]},
-            "one": {"count": all_sum["一对一"], "money": RATES["一对一"] * all_sum["一对一"], "rate": RATES["一对一"]},
-            "trial": {"count": all_sum["体验课"], "money": RATES["体验课"] * all_sum["体验课"], "rate": RATES["体验课"]},
+            "done_money": round2(money_done),
+            "base_salary": round2(BASE_SALARY),
+            "total_income": round2(money_all + BASE_SALARY),
+            "done_income": round2(money_done + BASE_SALARY),
+            "band": {"count": all_sum["班课"], "money": round2(kind_money(band_labels)),
+                     "rate": RATE_BAND},
+            "one": {"count": one_count, "money": round2(one_money),
+                    "rate": round2(one_money / one_count) if one_count else DEFAULT_ONE_RATE},
+            "trial": {"count": all_sum["体验课"], "money": round2(kind_money(trial_labels)),
+                      "rate": RATE_TRIAL},
+            # 公开版：不输出按学生的 breakdown，避免暴露学生单价
         },
         "courses": [],
     }
@@ -724,7 +939,7 @@ def output_json(name, today, month_detail, month_summary, range_detail,
                 "time": h,
                 "course": part,
                 "kind": kind,
-                "price": RATES[kind],
+                # 公开版：不带 student / price
             })
 
     out = Path(json_path).expanduser()
@@ -749,7 +964,7 @@ def parse_month(text):
 
 
 def main():
-    global RATE_BAND, RATE_ONE, RATE_TRIAL
+    global RATE_BAND, RATE_TRIAL, COMMISSION, BASE_SALARY, DEFAULT_ONE_RATE
     ap = argparse.ArgumentParser(description="金山文档课表提取器")
     ap.add_argument("--name", default=TARGET_NAME, help="要筛选的姓名，默认 %s" % TARGET_NAME)
     ap.add_argument("--days", type=int, default=DAYS, help="未来天数，默认 %d" % DAYS)
@@ -758,7 +973,7 @@ def main():
     ap.add_argument("--start-tomorrow", action="store_true", help="从明天开始算（默认含今天）")
     ap.add_argument("--with-all", action="store_true", help="额外输出一个「全部」工作表")
     ap.add_argument("--stats", action="store_true",
-                    help="统计某个月课时（班课/一对一/合计），不导出七天表")
+                    help="统计某个月课时与课酬，不导出七天表")
     ap.add_argument("--month", default=None,
                     help="统计哪个月，格式 2026-11（默认本月）")
     ap.add_argument("--no-stats", action="store_true",
@@ -767,16 +982,24 @@ def main():
                     help="先从金山文档重下最新课表（需要 WPS_COOKIE 或 cookie.txt），失败则用本地缓存")
     ap.add_argument("--as-of", default=None,
                     help="课酬算到哪天为止，如 2026-11-15（默认今天）")
-    ap.add_argument("--rate-band", type=int, default=RATE_BAND, help="班课单价，默认 180 元/节")
-    ap.add_argument("--rate-one", type=int, default=RATE_ONE, help="一对一单价，默认 210 元/节")
-    ap.add_argument("--rate-trial", type=int, default=RATE_TRIAL,
-                    help="体验课（名字带 T）单价，默认 160 元/节")
+    ap.add_argument("--rate-band", type=float, default=RATE_BAND,
+                    help="班课到手价，默认 180 元/节")
+    ap.add_argument("--rate-trial", type=float, default=RATE_TRIAL,
+                    help="体验课（名字带 T）到手价，默认 160 元/节")
+    ap.add_argument("--commission", type=float, default=COMMISSION,
+                    help="一对一课时费提成比例，默认 0.35")
+    ap.add_argument("--base-salary", type=float, default=BASE_SALARY,
+                    help="底薪，默认 1600 元/月")
+    ap.add_argument("--rate-one", type=float, default=DEFAULT_ONE_RATE,
+                    help="名单外学生的一对一兜底到手价，默认 210 元/节")
     ap.add_argument("--json-out", default=None,
                     help="输出 JSON 文件路径（供手机端读取）；GitHub Actions 中默认 timetable.json")
     args = ap.parse_args()
 
-    RATE_BAND, RATE_ONE, RATE_TRIAL = args.rate_band, args.rate_one, args.rate_trial
-    RATES.update({"班课": RATE_BAND, "一对一": RATE_ONE, "体验课": RATE_TRIAL})
+    RATE_BAND, RATE_TRIAL = args.rate_band, args.rate_trial
+    COMMISSION = args.commission
+    BASE_SALARY = args.base_salary
+    DEFAULT_ONE_RATE = args.rate_one
 
     today = dt.date.today()
     as_of = today
@@ -874,11 +1097,15 @@ def main():
             write_month_sheet(out_wb, args.name, y, m, month_detail, month_summary, as_of,
                               "{}年{}月课时与课酬".format(y, m))
             all_sum, done_sum = split_month(month_detail, as_of)
-            print("已附带 {}年{}月：全月 班课 {} / 一对一 {} / 体验课 {} 节，课酬 {} 元；"
-                  "截至 {} 已上 {} 节、{} 元"
+            rows = summarize_by_category(month_detail, as_of)
+            m_all = sum(r["all_m"] for r in rows)
+            m_done = sum(r["done_m"] for r in rows)
+            print("已附带 {}年{}月：全月 班课 {} / 一对一 {} / 体验课 {} 节，课酬 {} 元，"
+                  "加底薪到手 {} 元；截至 {} 已上 {} 节、课酬 {} 元、到手 {} 元"
                   .format(y, m, all_sum["班课"], all_sum["一对一"], all_sum["体验课"],
-                          sum_money(all_sum), as_of.strftime("%m-%d"),
-                          sum(done_sum.values()), sum_money(done_sum)))
+                          fmt_money(m_all), fmt_money(m_all + BASE_SALARY),
+                          as_of.strftime("%m-%d"), sum(done_sum.values()),
+                          fmt_money(m_done), fmt_money(m_done + BASE_SALARY)))
 
     # 4) 保存 xlsx
     out_path = Path(args.out).expanduser() if args.out else (
