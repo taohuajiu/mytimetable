@@ -925,6 +925,17 @@ def output_json(name, today, month_detail, month_summary, range_detail,
         "courses": [],
     }
 
+    # 每日金额合计（只给当天总额，不含任何单价），手机端逐日「+X元」用这个
+    data["days"] = [
+        {
+            "date": d.isoformat(),
+            "weekday": WEEKDAY_CN[d.weekday()],
+            "count": len(b["班课"]) + len(b["一对一"]) + len(b["体验课"]),
+            "money": round2(bucket_money(b)),
+        }
+        for d, b in sorted(range_detail.items())
+    ]
+
     for d in sorted(range_detail):
         b = range_detail[d]
         items = []
