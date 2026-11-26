@@ -1,14 +1,14 @@
 {
   "name": "段锋杰",
-  "updated": "2026-11-25 13:22",
+  "updated": "2026-11-26 08:07",
   "month_total": 11470,
   "month": {
     "year": 2026,
     "month": 11,
     "total_hours": 57,
     "total_money": 11470,
-    "done_hours": 43,
-    "done_money": 8590,
+    "done_hours": 45,
+    "done_money": 9010,
     "band": {
       "count": 10,
       "money": 1800,
@@ -26,22 +26,6 @@
     }
   },
   "courses": [
-    {
-      "date": "2026-11-25",
-      "weekday": "星期三",
-      "time": "8:00-10:00",
-      "course": "黄锴九点",
-      "kind": "一对一",
-      "price": 210
-    },
-    {
-      "date": "2026-11-25",
-      "weekday": "星期三",
-      "time": "13:30-15:30",
-      "course": "陈柯澔14点30分",
-      "kind": "一对一",
-      "price": 210
-    },
     {
       "date": "2026-11-26",
       "weekday": "星期四",
@@ -159,6 +143,22 @@
       "weekday": "星期二",
       "time": "8:00-10:00",
       "course": "陈柯澔九点",
+      "kind": "一对一",
+      "price": 210
+    },
+    {
+      "date": "2026-12-02",
+      "weekday": "星期三",
+      "time": "8:00-10:00",
+      "course": "黄锴九点",
+      "kind": "一对一",
+      "price": 210
+    },
+    {
+      "date": "2026-12-02",
+      "weekday": "星期三",
+      "time": "13:30-15:30",
+      "course": "陈柯澔14点",
       "kind": "一对一",
       "price": 210
     }
