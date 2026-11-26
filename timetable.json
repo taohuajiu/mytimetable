@@ -1,12 +1,12 @@
 {
   "name": "段锋杰",
-  "updated": "2026-11-26 12:54",
-  "month_total": 11470,
+  "updated": "2026-11-26 17:51",
+  "month_total": 11260,
   "month": {
     "year": 2026,
     "month": 11,
-    "total_hours": 57,
-    "total_money": 11470,
+    "total_hours": 56,
+    "total_money": 11260,
     "done_hours": 45,
     "done_money": 9010,
     "band": {
@@ -15,8 +15,8 @@
       "rate": 180
     },
     "one": {
-      "count": 43,
-      "money": 9030,
+      "count": 42,
+      "money": 8820,
       "rate": 210
     },
     "trial": {
@@ -47,14 +47,6 @@
       "weekday": "星期五",
       "time": "13:30-15:30",
       "course": "黄锴",
-      "kind": "一对一",
-      "price": 210
-    },
-    {
-      "date": "2026-11-27",
-      "weekday": "星期五",
-      "time": "15:30-17:30",
-      "course": "陈柯澔",
       "kind": "一对一",
       "price": 210
     },
