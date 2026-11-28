@@ -1,17 +1,17 @@
 {
   "name": "段锋杰",
-  "updated": "2026-11-27 12:54",
+  "updated": "2026-11-28 10:40",
   "month_total": 11531.9,
   "month": {
     "year": 2026,
     "month": 11,
     "total_hours": 56,
     "total_money": 11531.9,
-    "done_hours": 47,
-    "done_money": 9619.38,
+    "done_hours": 52,
+    "done_money": 10625.23,
     "base_salary": 1600.0,
     "total_income": 13131.9,
-    "done_income": 11219.38,
+    "done_income": 12225.23,
     "band": {
       "count": 10,
       "money": 1800.0,
@@ -29,20 +29,6 @@
     }
   },
   "courses": [
-    {
-      "date": "2026-11-27",
-      "weekday": "星期五",
-      "time": "13:30-15:30",
-      "course": "黄锴",
-      "kind": "一对一"
-    },
-    {
-      "date": "2026-11-27",
-      "weekday": "星期五",
-      "time": "19:30-21:30",
-      "course": "徐瑾涵",
-      "kind": "一对一"
-    },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
@@ -140,15 +126,30 @@
       "time": "13:30-15:30",
       "course": "黄锴",
       "kind": "一对一"
+    },
+    {
+      "date": "2026-12-04",
+      "weekday": "星期五",
+      "time": "13:30-15:30",
+      "course": "黄锴",
+      "kind": "一对一"
+    },
+    {
+      "date": "2026-12-04",
+      "weekday": "星期五",
+      "time": "15:30-17:30",
+      "course": "陈柯澔",
+      "kind": "一对一"
+    },
+    {
+      "date": "2026-12-04",
+      "weekday": "星期五",
+      "time": "19:30-21:30",
+      "course": "徐瑾涵",
+      "kind": "一对一"
     }
   ],
   "days": [
-    {
-      "date": "2026-11-27",
-      "weekday": "星期五",
-      "count": 2,
-      "money": 425.6
-    },
     {
       "date": "2026-11-28",
       "weekday": "星期六",
@@ -178,6 +179,12 @@
       "weekday": "星期四",
       "count": 2,
       "money": 439.08
+    },
+    {
+      "date": "2026-12-04",
+      "weekday": "星期五",
+      "count": 3,
+      "money": 654.68
     }
   ]
 }
